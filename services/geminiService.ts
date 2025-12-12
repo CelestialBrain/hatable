@@ -48,15 +48,21 @@ You are the "Senior UI Engineer & State Manager." You are maintaining a live web
     * **Minimal:** Lots of whitespace (p-12), large typography, subtle gray borders.
 
 **OUTPUT FORMAT (STRICT JSON)**
+You must strictly output VALID JSON.
+- **ALL property names must be enclosed in double quotes.** (e.g., "thought_process": "...")
+- **NO trailing commas.**
+- **NO markdown** outside the JSON.
+
+Example:
 {
-  "thought_process": "1. User wants an 'About' page. 2. I will copy the Header from 'Home'. 3. I will add the text section...",
-  "chat_response": "I've added the About page with the same Neo-Brutalist style...",
-  "suggestions": ["Add Contact Form", "Mobile Fixes"],
+  "thought_process": "Analysis...",
+  "chat_response": "I've added the About page...",
+  "suggestions": ["Add Contact Form"],
   "pages": [
     {
       "id": "home",
       "title": "Home",
-      "content": "<!DOCTYPE html><html>...FULL CODE...</html>"
+      "content": "<!DOCTYPE html>..."
     }
   ]
 }
@@ -85,21 +91,21 @@ const responseSchema: Schema = {
 };
 
 function cleanJsonString(str: string): string {
-  let jsonStr = str.trim();
-  // Remove markdown code blocks
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+  // Remove potential markdown code blocks first
+  let cleaned = str.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  // Find the outer object
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  
+  if (start !== -1 && end !== -1) {
+    cleaned = cleaned.substring(start, end + 1);
   }
   
-  // Find JSON object bounds
-  const firstBrace = jsonStr.indexOf('{');
-  const lastBrace = jsonStr.lastIndexOf('}');
+  // Fix trailing commas which are common in LLM JSON
+  cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1');
   
-  if (firstBrace !== -1 && lastBrace !== -1) {
-    jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
-  }
-  
-  return jsonStr;
+  return cleaned;
 }
 
 export const generateVibe = async (
@@ -146,6 +152,10 @@ export const generateVibe = async (
 
   } catch (error) {
     console.error("Gemini API Error:", error);
+    // Try to provide more helpful error info
+    if (error instanceof SyntaxError) {
+       console.error("Failed JSON content:", error.message);
+    }
     throw error;
   }
 };
