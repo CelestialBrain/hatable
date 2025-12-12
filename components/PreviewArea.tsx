@@ -13,12 +13,14 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
   const [copied, setCopied] = useState(false);
   const [activePageId, setActivePageId] = useState<string | null>(null);
 
-  // Set initial active page when pages change
   useEffect(() => {
     if (pages && pages.length > 0) {
-      setActivePageId(pages[0].id);
+      // If the active page is no longer in the list (deleted), or null, reset to first page
+      if (!activePageId || !pages.find(p => p.id === activePageId)) {
+        setActivePageId(pages[0].id);
+      }
     }
-  }, [pages]);
+  }, [pages, activePageId]);
 
   // Reset copy state after 2 seconds
   useEffect(() => {
@@ -35,6 +37,55 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
       navigator.clipboard.writeText(activePage.content);
       setCopied(true);
     }
+  };
+
+  /**
+   * SAFETY NET FUNCTION
+   * This ensures the preview always looks good, even if the AI returns partial code.
+   */
+  const processHtml = (html: string) => {
+    if (!html) return "";
+
+    let finalHtml = html;
+
+    // 1. Fix relative image paths that break previews
+    finalHtml = finalHtml.replace(/src=["'](?!\/\/|https?|data:)([^"']+)["']/g, 'src="https://placehold.co/600x400?text=Image+Missing"');
+
+    // 2. Inject Tailwind & Fonts if the AI forgot the <head>
+    if (!finalHtml.includes('<!DOCTYPE html>')) {
+      return `
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+            <script>
+              tailwind.config = {
+                theme: {
+                  extend: {
+                    fontFamily: {
+                      sans: ['Inter', 'sans-serif'],
+                      serif: ['Playfair Display', 'serif'],
+                      mono: ['JetBrains Mono', 'monospace'],
+                    }
+                  }
+                }
+              }
+            </script>
+            <style>
+              ::-webkit-scrollbar { width: 0px; background: transparent; }
+              body { -ms-overflow-style: none; scrollbar-width: none; }
+            </style>
+          </head>
+          <body class="min-h-screen bg-white text-black">
+            ${finalHtml}
+          </body>
+        </html>
+      `;
+    }
+    return finalHtml;
   };
 
   if (!pages && !isLoading) {
@@ -158,10 +209,10 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
                 }}
                 >
                 <iframe
-                    srcDoc={activePage.content}
+                    srcDoc={processHtml(activePage.content)} 
                     title="Preview"
                     className="w-full h-full border-none bg-white"
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                 />
                 </div>
             </div>

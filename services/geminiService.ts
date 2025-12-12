@@ -55,14 +55,14 @@ You must strictly output VALID JSON.
 
 Example:
 {
-  "thought_process": "Analysis...",
-  "chat_response": "I've added the About page...",
-  "suggestions": ["Add Contact Form"],
+  "thought_process": "1. User wants an 'About' page. 2. I will copy the Header from 'Home'. 3. I will add the text section...",
+  "chat_response": "I've added the About page with the same Neo-Brutalist style...",
+  "suggestions": ["Add Contact Form", "Mobile Fixes"],
   "pages": [
     {
       "id": "home",
       "title": "Home",
-      "content": "<!DOCTYPE html>..."
+      "content": "<!DOCTYPE html><html>...FULL CODE...</html>"
     }
   ]
 }
