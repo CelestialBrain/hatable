@@ -5,6 +5,16 @@ import { generateVibe } from './services/geminiService';
 import { Message, Page } from './types';
 import { AlertCircle } from 'lucide-react';
 
+const mergePages = (current: Page[], incoming: Page[]): Page[] => {
+  const pageMap = new Map(current.map(p => [p.id, p]));
+  
+  incoming.forEach(page => {
+    pageMap.set(page.id, page);
+  });
+  
+  return Array.from(pageMap.values());
+};
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [latestPages, setLatestPages] = useState<Page[] | null>(null);
@@ -19,7 +29,9 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const response = await generateVibe(userPrompt);
+      const response = await generateVibe(userPrompt, latestPages || []);
+      
+      const updatedPages = mergePages(latestPages || [], response.pages);
 
       const botMessage: Message = {
         role: 'model',
@@ -27,17 +39,13 @@ const App: React.FC = () => {
         type: 'code_preview',
         metadata: {
           thought_process: response.thought_process,
-          pages: response.pages,
+          pages: updatedPages,
           suggestions: response.suggestions
         }
       };
 
       setMessages((prev) => [...prev, botMessage]);
-      
-      // Update the preview area with the new pages
-      if (response.pages && response.pages.length > 0) {
-        setLatestPages(response.pages);
-      }
+      setLatestPages(updatedPages);
 
     } catch (err) {
       console.error(err);

@@ -1,47 +1,62 @@
 import { GoogleGenAI, Schema, Type } from "@google/genai";
-import { VibeResponse } from "../types";
+import { VibeResponse, Page } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 **ROLE**
-You are the "Visual Vibe Architect." Your goal is to take the user's messy, non-technical ideas and instantly turn them into (1) a helpful textual refinement, (2) a functional set of HTML/Tailwind CSS pages that visually represent the UI they are describing, and (3) smart suggestions for next steps.
+You are the "Senior UI Engineer & State Manager." You are maintaining a live web project. Your goal is to produce **production-ready, full-stack HTML** that looks professional and functions instantly.
 
-**CORE BEHAVIORS**
-1.  **Listen & Visualize:**
-    * Analyze the user's "vibe" (e.g., "retro," "corporate," "playful," "neo-brutalist").
-    * If specific UI elements are mentioned (e.g., "round buttons"), STRICTLY adhere to them in the code.
-    * If no style is mentioned, pick a modern, clean default (Inter font, rounded-lg, soft shadows).
+**CORE BEHAVIOR**
+1.  **Context Awareness (CRITICAL):**
+    * You will receive the "Current Project State" (existing HTML pages).
+    * **DO NOT** rewrite the entire design style unless explicitly asked.
+    * If the user asks to "Change the button color," **KEEP** the rest of the layout, fonts, and header exactly the same. Only modify the targeted element.
+    * If adding a NEW page, you **MUST** copy the header/footer/styling from the existing "Home" page to ensure consistency.
 
-2.  **Multi-Page Architecture:**
-    * Instead of a single file, you must generate an array of 'pages'.
-    * Each page must be a complete, standalone HTML document starting with <!DOCTYPE html> and including <script src="https://cdn.tailwindcss.com"></script>.
-    * The first page is the default view.
-    * **Navigation:** Since these are standalone files in an iframe, you cannot use real routing. However, you should visually simulate navigation (e.g., a nav bar with "Home", "About" links) so the user understands the flow.
+2.  **The "NO-LAZY" HTML Rule (MANDATORY):**
+    * **NEVER return a code fragment** (like just a <div>).
+    * Every single page content string MUST be a **COMPLETE HTML DOCUMENT** starting with \`<!DOCTYPE html>\`.
+    * You **MUST** include the <head> with these exact scripts in every file:
+      \`\`\`html
+      <head>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+        <script>
+          tailwind.config = {
+            theme: {
+              extend: {
+                fontFamily: {
+                  sans: ['Inter', 'sans-serif'],
+                  serif: ['Playfair Display', 'serif'],
+                  mono: ['JetBrains Mono', 'monospace'],
+                }
+              }
+            }
+          }
+        </script>
+      </head>
+      \`\`\`
 
-3.  **Refinement & Suggestions:**
-    * Provide 3-4 short, actionable text suggestions for what the user might want to do next (e.g., "Add Dark Mode", "Make Mobile Responsive", "Add Login Page").
+3.  **Asset Safety Rules:**
+    * **IMAGES:** DO NOT use relative paths (e.g., \`src="./logo.png"\`). You must use absolute URLs:
+      - Use: \`https://placehold.co/600x400/222/FFF?text=Hero+Image\`
+      - Or Unsplash: \`https://images.unsplash.com/photo-...\`
+    * **ICONS:** DO NOT try to import Lucide or React icons. You MUST render icons as **inline SVGs** directly in the HTML.
+
+4.  **Style Recipes (Apply based on user Vibe):**
+    * **Neo-Brutalism:** Border-2 black, Shadow-[4px_4px_0px_0px_black], bg-yellow-300 or white. Sharp corners.
+    * **Glassmorphism:** bg-white/10, backdrop-blur-xl, border-white/20. Deep gradient backgrounds (purple/black).
+    * **Minimal:** Lots of whitespace (p-12), large typography, subtle gray borders.
 
 **OUTPUT FORMAT (STRICT JSON)**
-You must strictly output VALID JSON.
-- **DO NOT** use Markdown code blocks (no \`\`\`json).
-- **DO NOT** include any text before or after the JSON.
-- All keys must be in double quotes (e.g., "thought_process": "...").
-- **NO trailing commas** in arrays or objects.
-- **Escape all double quotes** inside strings (e.g., "content": "<div class=\\"w-full\\">").
-
 {
-  "thought_process": "Analysis of the request and design strategy...",
-  "chat_response": "Conversational response to the user...",
-  "suggestions": ["Action 1", "Action 2", "Action 3"],
+  "thought_process": "1. User wants an 'About' page. 2. I will copy the Header from 'Home'. 3. I will add the text section...",
+  "chat_response": "I've added the About page with the same Neo-Brutalist style...",
+  "suggestions": ["Add Contact Form", "Mobile Fixes"],
   "pages": [
     {
       "id": "home",
       "title": "Home",
-      "content": "<!DOCTYPE html><html>...</html>"
-    },
-    {
-      "id": "about",
-      "title": "About Us",
-      "content": "<!DOCTYPE html><html>...</html>"
+      "content": "<!DOCTYPE html><html>...FULL CODE...</html>"
     }
   ]
 }
@@ -52,10 +67,7 @@ const responseSchema: Schema = {
   properties: {
     thought_process: { type: Type.STRING },
     chat_response: { type: Type.STRING },
-    suggestions: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING }
-    },
+    suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
     pages: {
       type: Type.ARRAY,
       items: {
@@ -74,39 +86,51 @@ const responseSchema: Schema = {
 
 function cleanJsonString(str: string): string {
   let jsonStr = str.trim();
-
-  // 1. Remove Markdown code blocks if present
+  // Remove markdown code blocks
   if (jsonStr.startsWith("```")) {
     jsonStr = jsonStr.replace(/^```(json)?/, "").replace(/```$/, "").trim();
   }
-
-  // 2. Find the outer JSON object to ignore preambles/postambles
+  
+  // Find JSON object bounds
   const firstBrace = jsonStr.indexOf('{');
   const lastBrace = jsonStr.lastIndexOf('}');
   
   if (firstBrace !== -1 && lastBrace !== -1) {
     jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
   }
-
-  // 3. Fix trailing commas (e.g. "key": "value", } -> "key": "value" })
-  // This is safe enough as it requires a closing brace/bracket immediately after the comma
-  jsonStr = jsonStr.replace(/,(\s*[}\]])/g, '$1');
-
+  
   return jsonStr;
 }
 
-export const generateVibe = async (prompt: string): Promise<VibeResponse> => {
+export const generateVibe = async (
+  prompt: string, 
+  currentPages: Page[] = []
+): Promise<VibeResponse> => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API_KEY is not defined");
-  }
+  if (!apiKey) throw new Error("API_KEY is not defined");
 
   const ai = new GoogleGenAI({ apiKey });
+
+  const contextPrompt = currentPages.length > 0 
+    ? `
+      *** CURRENT PROJECT STATE ***
+      The user is working on an existing project. Here is the current code for the pages:
+      ${JSON.stringify(currentPages.map(p => ({ id: p.id, title: p.title, content: p.content })))}
+      
+      *** USER REQUEST ***
+      ${prompt}
+      
+      *** INSTRUCTIONS ***
+      - If the user wants to *edit* a page, return the FULL updated HTML for that page ID.
+      - If the user wants a *new* page, return a new object.
+      - Maintain strict visual consistency with the existing code above.
+      `
+    : prompt;
 
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: prompt,
+      contents: contextPrompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
@@ -115,21 +139,13 @@ export const generateVibe = async (prompt: string): Promise<VibeResponse> => {
     });
 
     const text = response.text;
-    if (!text) {
-        throw new Error("No response text from Gemini");
-    }
+    if (!text) throw new Error("No response text");
 
-    // Apply robust cleaning and fixing
     const jsonString = cleanJsonString(text);
-    
     return JSON.parse(jsonString) as VibeResponse;
 
   } catch (error) {
     console.error("Gemini API Error:", error);
-    // Rethrow with a user-friendly message if it's a parse error
-    if (error instanceof SyntaxError) {
-        throw new Error("Failed to parse the design generated by AI. Please try again.");
-    }
     throw error;
   }
 };
