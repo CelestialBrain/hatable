@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from '../types';
-import { Send, Sparkles, User, Bot, Loader2, ArrowRight } from 'lucide-react';
+import { Send, Sparkles, User, Bot, Loader2, ArrowRight, Dices } from 'lucide-react';
+import { generateRandomIdea } from '../services/geminiService';
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -10,6 +11,7 @@ interface ChatInterfaceProps {
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isLoading }) => {
   const [input, setInput] = useState('');
+  const [isLuckyLoading, setIsLuckyLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -25,6 +27,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
     if (input.trim() && !isLoading) {
       onSendMessage(input);
       setInput('');
+    }
+  };
+
+  const handleLuckyClick = async () => {
+    if (isLuckyLoading || isLoading) return;
+    
+    setIsLuckyLoading(true);
+    try {
+      const idea = await generateRandomIdea();
+      setInput(idea);
+    } catch (error) {
+      console.error("Failed to get lucky");
+    } finally {
+      setIsLuckyLoading(false);
     }
   };
 
@@ -121,15 +137,34 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
             onChange={(e) => setInput(e.target.value)}
             placeholder="Describe your UI idea..."
             disabled={isLoading}
-            className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-3 pl-4 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-zinc-600"
+            className="w-full bg-zinc-950 border border-zinc-800 text-white rounded-xl py-3 pl-4 pr-24 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-zinc-600"
           />
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-2 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Send size={16} />
-          </button>
+          
+          <div className="absolute right-2 top-2 flex items-center gap-1">
+            {/* FEELING LUCKY BUTTON */}
+            <button
+              type="button"
+              onClick={handleLuckyClick}
+              disabled={isLoading || isLuckyLoading}
+              className="p-1.5 text-zinc-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all disabled:opacity-50"
+              title="I'm feeling lucky"
+            >
+              {isLuckyLoading ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Dices size={16} />
+              )}
+            </button>
+
+            {/* SEND BUTTON */}
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={16} />
+            </button>
+          </div>
         </form>
       </div>
     </div>

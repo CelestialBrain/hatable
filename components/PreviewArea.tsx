@@ -22,6 +22,24 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
     }
   }, [pages, activePageId]);
 
+  // Handle navigation messages from the iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NAVIGATE_TO_PAGE' && event.data?.pageId) {
+        // Find if the target page exists in our state
+        const targetPage = pages?.find(p => p.id === event.data.pageId);
+        if (targetPage) {
+          setActivePageId(targetPage.id);
+        } else {
+            console.warn(`Attempted to navigate to non-existent page: ${event.data.pageId}`);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [pages]);
+
   // Reset copy state after 2 seconds
   useEffect(() => {
     if (copied) {
@@ -42,16 +60,60 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
   /**
    * SAFETY NET FUNCTION
    * This ensures the preview always looks good, even if the AI returns partial code.
+   * Now also handles Navigation injection and Image fixing.
    */
   const processHtml = (html: string) => {
     if (!html) return "";
 
     let finalHtml = html;
 
-    // 1. Fix relative image paths that break previews
-    finalHtml = finalHtml.replace(/src=["'](?!\/\/|https?|data:)([^"']+)["']/g, 'src="https://placehold.co/600x400?text=Image+Missing"');
+    // 1. Fix Broken Images (Use Pollinations.ai)
+    // Replace src="" that are NOT http/data with a generated image based on ALT text
+    // Matches <img ... src="..." ... > and captures attributes before/after/value
+    finalHtml = finalHtml.replace(/<img([^>]+)src=["']([^"']+)["']([^>]*)>/gi, (match, before, src, after) => {
+        if (src.trim().startsWith('http') || src.trim().startsWith('data:')) {
+            return match; // It's valid
+        }
+        
+        // Try to extract alt text from before or after attributes
+        const combinedAttrs = before + after;
+        const altMatch = combinedAttrs.match(/alt=["']([^"']+)["']/i);
+        const altText = altMatch ? altMatch[1] : 'abstract design';
+        
+        // Generate dynamic URL
+        const newUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(altText)}`;
+        
+        // Reconstruct tag with new src
+        return `<img${before}src="${newUrl}"${after}>`;
+    });
 
-    // 2. Inject Tailwind & Fonts if the AI forgot the <head>
+    // 2. Inject Navigation Interceptor Script
+    // This catches click events on <a> tags and posts a message to the parent if it's an internal link
+    const navScript = `
+      <script>
+        document.addEventListener('click', (e) => {
+          const link = e.target.closest('a');
+          if (link) {
+            const href = link.getAttribute('href');
+            // If internal link (no http, no #, no mailto, no javascript)
+            if (href && !href.startsWith('http') && !href.startsWith('#') && !href.startsWith('mailto') && !href.startsWith('javascript:')) {
+              e.preventDefault();
+              console.log("Navigating to:", href);
+              window.parent.postMessage({ type: 'NAVIGATE_TO_PAGE', pageId: href }, '*');
+            }
+          }
+        });
+      </script>
+    `;
+
+    // 3. Insert Script before closing body
+    if (finalHtml.includes('</body>')) {
+      finalHtml = finalHtml.replace('</body>', `${navScript}</body>`);
+    } else {
+      finalHtml += navScript;
+    }
+
+    // 4. Inject Tailwind & Fonts if the AI forgot the <head>
     if (!finalHtml.includes('<!DOCTYPE html>')) {
       return `
         <!DOCTYPE html>
@@ -212,7 +274,7 @@ const PreviewArea: React.FC<PreviewAreaProps> = ({ pages, isLoading }) => {
                     srcDoc={processHtml(activePage.content)} 
                     title="Preview"
                     className="w-full h-full border-none bg-white"
-                    sandbox="allow-scripts allow-same-origin"
+                    sandbox="allow-scripts allow-same-origin allow-forms"
                 />
                 </div>
             </div>
