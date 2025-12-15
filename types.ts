@@ -4,8 +4,14 @@ export interface Page {
   content: string;
 }
 
+export interface Diagnostics {
+  validation: string[];
+  repairs: string[];
+  assumptions: string[];
+}
+
 export interface VibeResponse {
-  thought_process: string;
+  diagnostics: Diagnostics;
   chat_response: string;
   suggestions: string[];
   pages: Page[];
@@ -16,7 +22,7 @@ export interface Message {
   content: string;
   type?: 'text' | 'code_preview';
   metadata?: {
-    thought_process?: string;
+    diagnostics?: Diagnostics;
     pages?: Page[];
     suggestions?: string[];
   };

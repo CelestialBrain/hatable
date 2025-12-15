@@ -5,11 +5,28 @@ import { generateVibe } from './services/geminiService';
 import { Message, Page } from './types';
 import { AlertCircle } from 'lucide-react';
 
+// Validation helper to ensure model output is safe and usable
+const isValidPage = (page: any): page is Page => {
+  return (
+    typeof page === 'object' &&
+    page !== null &&
+    typeof page.id === 'string' &&
+    !/\s/.test(page.id) && // Ensure ID has no spaces
+    page.id.length > 0 &&
+    typeof page.title === 'string' &&
+    typeof page.content === 'string' &&
+    page.content.length > 0 &&
+    page.content.length < 600000 // Limit size to ~600KB to prevent memory issues
+  );
+};
+
 const mergePages = (current: Page[], incoming: Page[]): Page[] => {
   const pageMap = new Map(current.map(p => [p.id, p]));
   
   incoming.forEach(page => {
-    pageMap.set(page.id, page);
+    if (isValidPage(page)) {
+      pageMap.set(page.id, page);
+    }
   });
   
   return Array.from(pageMap.values());
@@ -31,14 +48,21 @@ const App: React.FC = () => {
     try {
       const response = await generateVibe(userPrompt, latestPages || []);
       
-      const updatedPages = mergePages(latestPages || [], response.pages);
+      const validPages = response.pages.filter(isValidPage);
+      
+      if (validPages.length < response.pages.length) {
+        console.warn("Some generated pages were invalid and filtered out.", 
+          response.pages.filter(p => !isValidPage(p)));
+      }
+
+      const updatedPages = mergePages(latestPages || [], validPages);
 
       const botMessage: Message = {
         role: 'model',
         content: response.chat_response,
         type: 'code_preview',
         metadata: {
-          thought_process: response.thought_process,
+          diagnostics: response.diagnostics,
           pages: updatedPages,
           suggestions: response.suggestions
         }
@@ -59,6 +83,25 @@ const App: React.FC = () => {
     }
   };
 
+  const handleClear = () => {
+    setMessages([]);
+    setLatestPages(null);
+    setError(null);
+  };
+
+  const handleRestoreVersion = (pages: Page[]) => {
+    setLatestPages(pages);
+  };
+
+  const handleUpdatePage = (pageId: string, newContent: string) => {
+    if (!latestPages) return;
+    
+    const updatedPages = latestPages.map(p => 
+      p.id === pageId ? { ...p, content: newContent } : p
+    );
+    setLatestPages(updatedPages);
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-black text-white selection:bg-indigo-500/30">
       
@@ -75,6 +118,8 @@ const App: React.FC = () => {
         <ChatInterface 
           messages={messages} 
           onSendMessage={handleSendMessage}
+          onClear={handleClear}
+          onRestore={handleRestoreVersion}
           isLoading={isLoading}
         />
       </div>
@@ -84,6 +129,7 @@ const App: React.FC = () => {
         <PreviewArea 
           pages={latestPages}
           isLoading={isLoading}
+          onUpdatePage={handleUpdatePage}
         />
       </div>
     </div>
